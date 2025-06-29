@@ -1,4 +1,3 @@
-import React from "react";
 import { Badge } from "./ui/badge";
 import { CheckCircle, XCircle, Info, ChevronDown } from "lucide-react";
 import {

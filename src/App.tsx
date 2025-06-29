@@ -3,7 +3,7 @@ import SpeechRecognition from "./components/SpeechRecognition";
 
 function App() {
   return (
-    <div className="container mx-auto py-10 px-5 max-w-2xl">
+    <div className="container mx-auto py-6 px-3 max-w-6xl">
       <h1 className="scroll-m-20 text-center text-4xl font-extrabold tracking-tight text-balance">
         Web Speech API
       </h1>

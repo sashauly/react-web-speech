@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 
 export interface SpeechToTextOptions {
   lang?: SpeechRecognition["lang"];
@@ -79,7 +79,12 @@ const useSpeechToText = (
   actions?: Record<string, () => void>
 ): UseSpeechToTextReturn => {
   console.log("[useSpeechToText] Hook initialized");
-  const [transcript, setTranscript] = useState("");
+  const [transcriptState, setTranscriptState] = useState({
+    transcript: "",
+    interimTranscript: "",
+    finalTranscript: "",
+    resultsHistory: [] as string[],
+  });
   const [isListening, setIsListening] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confidence, setConfidence] = useState<number | null>(null);
@@ -95,13 +100,14 @@ const useSpeechToText = (
     "granted" | "denied" | "prompt" | "unsupported"
   >("prompt");
 
-  const [interimTranscript, setInterimTranscript] = useState("");
-  const [finalTranscript, setFinalTranscript] = useState("");
-  const [resultsHistory, setResultsHistory] = useState<string[]>([]);
-
-  const [processedInterimTranscript, setProcessedInterimTranscript] =
-    useState("");
-  const [processedFinalTranscript, setProcessedFinalTranscript] = useState("");
+  const processedInterimTranscript = useMemo(
+    () => editInterim(transcriptState.interimTranscript, dictionary),
+    [transcriptState.interimTranscript, dictionary]
+  );
+  const processedFinalTranscript = useMemo(
+    () => editFinal(transcriptState.finalTranscript, dictionary),
+    [transcriptState.finalTranscript, dictionary]
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -176,7 +182,6 @@ const useSpeechToText = (
     );
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
-      setResults(event.results);
       let interim = "";
       let final = "";
       let bestConfidence: number | null = null;
@@ -188,23 +193,26 @@ const useSpeechToText = (
           final += processed;
           bestConfidence = event.results[i][0].confidence;
           newFinals.push(processed);
-          console.log("[useSpeechToText] Final result:", processed);
         } else {
           interim += editInterim(transcriptPart, dictionary);
-          console.log("[useSpeechToText] Interim result:", transcriptPart);
         }
       }
-      setInterimTranscript(interim);
-      setFinalTranscript((prev) => (final ? prev + final : prev));
-      setTranscript((prev) => (final ? prev + final : prev) + interim);
+      setTranscriptState((prev) => ({
+        transcript:
+          (final ? prev.finalTranscript + final : prev.finalTranscript) +
+          interim,
+        interimTranscript: interim,
+        finalTranscript: final
+          ? prev.finalTranscript + final
+          : prev.finalTranscript,
+        resultsHistory:
+          newFinals.length > 0
+            ? [...prev.resultsHistory, ...newFinals]
+            : prev.resultsHistory,
+      }));
       setConfidence(bestConfidence);
+      setResults(event.results);
       if (newFinals.length > 0) {
-        setResultsHistory((prev) => [...prev, ...newFinals]);
-
-        setProcessedFinalTranscript((prev) =>
-          editFinal((prev ? prev : "") + newFinals.join(" "), dictionary)
-        );
-
         if (actions) {
           newFinals.forEach((result) => {
             result.split(" ").forEach((word) => {
@@ -218,8 +226,6 @@ const useSpeechToText = (
         }
         eventHandlers.onfinal?.(newFinals.join(" "), bestConfidence);
       }
-
-      setProcessedInterimTranscript(interim);
       if (interim) {
         eventHandlers.oninterim?.(interim);
       }
@@ -301,14 +307,14 @@ const useSpeechToText = (
 
   const startListening = useCallback(() => {
     setError(null);
-    setTranscript("");
+    setTranscriptState({
+      transcript: "",
+      interimTranscript: "",
+      finalTranscript: "",
+      resultsHistory: [],
+    });
     setConfidence(null);
     setResults(null);
-    setInterimTranscript("");
-    setFinalTranscript("");
-    setResultsHistory([]);
-    setProcessedInterimTranscript("");
-    setProcessedFinalTranscript("");
     console.log(
       "[useSpeechToText] Attempting to start listening. Mic permission:",
       micPermission
@@ -369,15 +375,15 @@ const useSpeechToText = (
   }, []);
 
   const resetTranscript = useCallback(() => {
-    setTranscript("");
+    setTranscriptState({
+      transcript: "",
+      interimTranscript: "",
+      finalTranscript: "",
+      resultsHistory: [],
+    });
     setConfidence(null);
     setResults(null);
     setError(null);
-    setInterimTranscript("");
-    setFinalTranscript("");
-    setResultsHistory([]);
-    setProcessedInterimTranscript("");
-    setProcessedFinalTranscript("");
     console.log("[useSpeechToText] Transcript reset.");
   }, []);
 
@@ -401,7 +407,7 @@ const useSpeechToText = (
 
   return {
     isListening,
-    transcript,
+    transcript: transcriptState.transcript,
     error,
     confidence,
     results,
@@ -411,9 +417,9 @@ const useSpeechToText = (
     setOptions,
     abortListening,
     recognitionRef,
-    interimTranscript,
-    finalTranscript,
-    resultsHistory,
+    interimTranscript: transcriptState.interimTranscript,
+    finalTranscript: transcriptState.finalTranscript,
+    resultsHistory: transcriptState.resultsHistory,
     processedInterimTranscript,
     processedFinalTranscript,
   };

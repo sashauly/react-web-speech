@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useReducer, useCallback, useMemo } from "react";
 import { Button } from "./ui/button";
 import { Textarea } from "./ui/textarea";
 import { Input } from "./ui/input";
@@ -137,27 +137,114 @@ const SUPPORTED_LANGUAGES = [
   { lang: "vi", region: "VN", label: "Vietnamese (Vietnam)" },
 ];
 
-const UNIQUE_LANGUAGES = Array.from(
-  SUPPORTED_LANGUAGES.reduce((acc, cur) => acc.add(cur.lang), new Set<string>())
-);
+// --- State Management ---
+const initialState = {
+  selectedLanguage: "en",
+  selectedRegion: "US",
+  copyStatus: "idle" as "idle" | "copied",
+  shouldRestart: false,
+  continuous: true,
+  interimResults: true,
+  maxAlternatives: 3,
+  customGrammar: "",
+  autoStart: false,
+  autoStop: false,
+  history: [] as string[],
+  micPermission: null as string | null,
+  lastConfidence: null as number | null,
+};
+
+type Action =
+  | { type: "SET_LANGUAGE"; payload: string }
+  | { type: "SET_REGION"; payload: string }
+  | { type: "SET_COPY_STATUS"; payload: "idle" | "copied" }
+  | { type: "SET_SHOULD_RESTART"; payload: boolean }
+  | { type: "SET_CONTINUOUS"; payload: boolean }
+  | { type: "SET_INTERIM_RESULTS"; payload: boolean }
+  | { type: "SET_MAX_ALTERNATIVES"; payload: number }
+  | { type: "SET_CUSTOM_GRAMMAR"; payload: string }
+  | { type: "SET_AUTO_START"; payload: boolean }
+  | { type: "SET_AUTO_STOP"; payload: boolean }
+  | { type: "ADD_HISTORY"; payload: string }
+  | { type: "CLEAR_HISTORY" }
+  | { type: "SET_MIC_PERMISSION"; payload: string | null }
+  | { type: "SET_LAST_CONFIDENCE"; payload: number | null };
+
+function reducer(
+  state: typeof initialState,
+  action: Action
+): typeof initialState {
+  switch (action.type) {
+    case "SET_LANGUAGE":
+      return { ...state, selectedLanguage: action.payload };
+    case "SET_REGION":
+      return { ...state, selectedRegion: action.payload };
+    case "SET_COPY_STATUS":
+      return { ...state, copyStatus: action.payload };
+    case "SET_SHOULD_RESTART":
+      return { ...state, shouldRestart: action.payload };
+    case "SET_CONTINUOUS":
+      return { ...state, continuous: action.payload };
+    case "SET_INTERIM_RESULTS":
+      return { ...state, interimResults: action.payload };
+    case "SET_MAX_ALTERNATIVES":
+      return { ...state, maxAlternatives: action.payload };
+    case "SET_CUSTOM_GRAMMAR":
+      return { ...state, customGrammar: action.payload };
+    case "SET_AUTO_START":
+      return { ...state, autoStart: action.payload };
+    case "SET_AUTO_STOP":
+      return { ...state, autoStop: action.payload };
+    case "ADD_HISTORY":
+      return {
+        ...state,
+        history: [...state.history.slice(-9), action.payload],
+      };
+    case "CLEAR_HISTORY":
+      return { ...state, history: [] };
+    case "SET_MIC_PERMISSION":
+      return { ...state, micPermission: action.payload };
+    case "SET_LAST_CONFIDENCE":
+      return { ...state, lastConfidence: action.payload };
+    default:
+      return state;
+  }
+}
 
 export default function SpeechRecognition() {
-  const [selectedLanguage, setSelectedLanguage] = useState("en");
-  const [selectedRegion, setSelectedRegion] = useState("US");
-  const [copyStatus, setCopyStatus] = useState<"idle" | "copied">("idle");
-  const [shouldRestart, setShouldRestart] = useState(false);
-
-  const [continuous, setContinuous] = useState(true);
-  const [interimResults, setInterimResults] = useState(true);
-  const [maxAlternatives, setMaxAlternatives] = useState(3);
-  const [customGrammar, setCustomGrammar] = useState("");
-  const [autoStart, setAutoStart] = useState(false);
-  const [autoStop, setAutoStop] = useState(false);
-  const [history, setHistory] = useState<string[]>([]);
-  const [micPermission, setMicPermission] = useState<string | null>(null);
-  const [lastConfidence, setLastConfidence] = useState<number | null>(null);
+  const [state, dispatch] = useReducer(reducer, initialState);
+  const {
+    selectedLanguage,
+    selectedRegion,
+    copyStatus,
+    shouldRestart,
+    continuous,
+    interimResults,
+    maxAlternatives,
+    customGrammar,
+    autoStart,
+    autoStop,
+    history,
+    micPermission,
+    lastConfidence,
+  } = state;
 
   const lang = `${selectedLanguage}-${selectedRegion}`;
+
+  const uniqueLanguages = useMemo(
+    () =>
+      Array.from(
+        SUPPORTED_LANGUAGES.reduce(
+          (acc, cur) => acc.add(cur.lang),
+          new Set<string>()
+        )
+      ),
+    []
+  );
+  const regionOptions = useMemo(
+    () => SUPPORTED_LANGUAGES.filter((l) => l.lang === selectedLanguage),
+    [selectedLanguage]
+  );
 
   const {
     isListening,
@@ -174,12 +261,12 @@ export default function SpeechRecognition() {
       continuous,
       interimResults,
       maxAlternatives,
-      grammars: undefined,
+      grammars: undefined, // TODO: parse customGrammar if provided
     },
     {
       onfinal: (finalText, conf) => {
-        setLastConfidence(conf ?? null);
-        setHistory((prev) => [...prev, finalText]);
+        dispatch({ type: "SET_LAST_CONFIDENCE", payload: conf ?? null });
+        dispatch({ type: "ADD_HISTORY", payload: finalText });
       },
     },
     DICTIONARY
@@ -190,95 +277,58 @@ export default function SpeechRecognition() {
       navigator.permissions
         .query({ name: "microphone" as PermissionName })
         .then((status) => {
-          setMicPermission(status.state);
+          dispatch({ type: "SET_MIC_PERMISSION", payload: status.state });
         })
-        .catch(() => setMicPermission("unsupported"));
+        .catch(() =>
+          dispatch({ type: "SET_MIC_PERMISSION", payload: "unsupported" })
+        );
     } else {
-      setMicPermission("unsupported");
+      dispatch({ type: "SET_MIC_PERMISSION", payload: "unsupported" });
     }
   }, []);
 
   useEffect(() => {
     if (autoStart && !isListening) {
       handleStart();
-    }
-  }, [autoStart]);
-  useEffect(() => {
-    if (autoStop && isListening) {
+    } else if (autoStop && isListening) {
       handleStop();
     }
-  }, [autoStop]);
-
-  useEffect(() => {
-    console.log("[SpeechRecognition] Mounted");
-    return () => {
-      console.log("[SpeechRecognition] Unmounted");
-    };
-  }, []);
-
-  useEffect(() => {
-    console.log("[SpeechRecognition] Language changed:", lang);
-  }, [lang]);
-
-  useEffect(() => {
-    console.log("[SpeechRecognition] isListening:", isListening);
-  }, [isListening]);
-
-  useEffect(() => {
-    console.log(
-      "[SpeechRecognition] processedFinalTranscript:",
-      processedFinalTranscript
-    );
-  }, [processedFinalTranscript]);
-
-  useEffect(() => {
-    console.log(
-      "[SpeechRecognition] processedInterimTranscript:",
-      processedInterimTranscript
-    );
-  }, [processedInterimTranscript]);
-
-  useEffect(() => {
-    if (error) console.error("[SpeechRecognition] Error:", error);
-  }, [error]);
+  }, [autoStart, autoStop, isListening]);
 
   const handleStart = useCallback(() => {
-    console.log("[SpeechRecognition] handleStart called");
     resetTranscript();
     startListening();
   }, [resetTranscript, startListening]);
 
   const handleStop = useCallback(() => {
-    console.log("[SpeechRecognition] handleStop called");
     stopListening();
   }, [stopListening]);
 
   const handleAbort = () => {
-    console.log("[SpeechRecognition] handleAbort called");
     if (abortListening) abortListening();
   };
 
   const handleCopy = async () => {
-    console.log("[SpeechRecognition] handleCopy called");
     await navigator.clipboard.writeText(processedFinalTranscript);
-    setCopyStatus("copied");
-    setTimeout(() => setCopyStatus("idle"), 2000);
+    dispatch({ type: "SET_COPY_STATUS", payload: "copied" });
+    setTimeout(
+      () => dispatch({ type: "SET_COPY_STATUS", payload: "idle" }),
+      2000
+    );
   };
 
   const handleClear = () => {
-    console.log("[SpeechRecognition] handleClear called");
     resetTranscript();
+    dispatch({ type: "CLEAR_HISTORY" });
   };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === "Space" && !isListening) {
-        console.log("[SpeechRecognition] Space pressed");
         handleStart();
         e.preventDefault();
       }
       if (e.code === "Escape" && isListening) {
-        console.log("[SpeechRecognition] Escape pressed");
         handleStop();
         e.preventDefault();
       }
@@ -290,16 +340,15 @@ export default function SpeechRecognition() {
   useEffect(() => {
     if (isListening) {
       stopListening();
-      setShouldRestart(true);
+      dispatch({ type: "SET_SHOULD_RESTART", payload: true });
     }
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line
   }, [lang, continuous, interimResults, maxAlternatives, customGrammar]);
 
   useEffect(() => {
     if (shouldRestart && !isListening) {
       startListening();
-      setShouldRestart(false);
+      dispatch({ type: "SET_SHOULD_RESTART", payload: false });
     }
   }, [shouldRestart, isListening, startListening]);
 
@@ -345,19 +394,19 @@ export default function SpeechRecognition() {
                 <Select
                   value={selectedLanguage}
                   onValueChange={(val) => {
-                    setSelectedLanguage(val);
+                    dispatch({ type: "SET_LANGUAGE", payload: val });
                     // Reset region to first available for this language
                     const firstRegion =
                       SUPPORTED_LANGUAGES.find((l) => l.lang === val)?.region ||
                       "US";
-                    setSelectedRegion(firstRegion);
+                    dispatch({ type: "SET_REGION", payload: firstRegion });
                   }}
                 >
                   <SelectTrigger className="w-full mt-1" aria-label="Language">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {UNIQUE_LANGUAGES.map((langCode) => {
+                    {uniqueLanguages.map((langCode) => {
                       // Find a label for this language (first occurrence)
                       const label =
                         SUPPORTED_LANGUAGES.find(
@@ -393,15 +442,15 @@ export default function SpeechRecognition() {
                 </Label>
                 <Select
                   value={selectedRegion}
-                  onValueChange={setSelectedRegion}
+                  onValueChange={(val) =>
+                    dispatch({ type: "SET_REGION", payload: val })
+                  }
                 >
                   <SelectTrigger className="w-full mt-1" aria-label="Region">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {SUPPORTED_LANGUAGES.filter(
-                      (l) => l.lang === selectedLanguage
-                    ).map((l) => (
+                    {regionOptions.map((l) => (
                       <SelectItem key={l.region} value={l.region}>
                         {l.label.includes("(")
                           ? l.label.split(" (")[1].replace(")", "")
@@ -472,7 +521,9 @@ export default function SpeechRecognition() {
                 <Switch
                   id="continuous"
                   checked={continuous}
-                  onCheckedChange={setContinuous}
+                  onCheckedChange={(val) =>
+                    dispatch({ type: "SET_CONTINUOUS", payload: val })
+                  }
                 />
               </div>
               {/* Interim Results */}
@@ -499,7 +550,9 @@ export default function SpeechRecognition() {
                 <Switch
                   id="interim"
                   checked={interimResults}
-                  onCheckedChange={setInterimResults}
+                  onCheckedChange={(val) =>
+                    dispatch({ type: "SET_INTERIM_RESULTS", payload: val })
+                  }
                 />
               </div>
               {/* Max Alternatives */}
@@ -529,7 +582,12 @@ export default function SpeechRecognition() {
                   min={1}
                   max={10}
                   value={maxAlternatives}
-                  onChange={(e) => setMaxAlternatives(Number(e.target.value))}
+                  onChange={(e) =>
+                    dispatch({
+                      type: "SET_MAX_ALTERNATIVES",
+                      payload: Number(e.target.value),
+                    })
+                  }
                   className="w-20"
                 />
               </div>
@@ -557,7 +615,9 @@ export default function SpeechRecognition() {
                 <Switch
                   id="autoStart"
                   checked={autoStart}
-                  onCheckedChange={setAutoStart}
+                  onCheckedChange={(val) =>
+                    dispatch({ type: "SET_AUTO_START", payload: val })
+                  }
                 />
               </div>
               {/* Auto Stop */}
@@ -584,7 +644,9 @@ export default function SpeechRecognition() {
                 <Switch
                   id="autoStop"
                   checked={autoStop}
-                  onCheckedChange={setAutoStop}
+                  onCheckedChange={(val) =>
+                    dispatch({ type: "SET_AUTO_STOP", payload: val })
+                  }
                 />
               </div>
             </div>
@@ -640,7 +702,12 @@ export default function SpeechRecognition() {
                 id="customGrammar"
                 placeholder="Paste SRGS XML or JS grammar"
                 value={customGrammar}
-                onChange={(e) => setCustomGrammar(e.target.value)}
+                onChange={(e) =>
+                  dispatch({
+                    type: "SET_CUSTOM_GRAMMAR",
+                    payload: e.target.value,
+                  })
+                }
                 className="w-full min-h-20"
               />
             </div>

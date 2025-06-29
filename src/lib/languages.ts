@@ -1,3 +1,5 @@
+// List of all supported languages for Web Speech API (as of 2024):
+// Reference: https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition/lang
 export const SUPPORTED_LANGUAGES = [
   { lang: "af", region: "ZA", label: "Afrikaans (South Africa)" },
   { lang: "ar", region: "SA", label: "Arabic (Saudi Arabia)" },

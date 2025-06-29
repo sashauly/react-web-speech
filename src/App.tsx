@@ -1,34 +1,32 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
+import EnvDebugInfo from "./components/EnvDebugInfo";
+import SpeechRecognition from "./components/SpeechRecognition";
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div>
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p>
-        Click on the Vite and React logos to learn more
+    <div className="container mx-auto py-10 px-5 max-w-2xl">
+      <h1 className="scroll-m-20 text-center text-4xl font-extrabold tracking-tight text-balance">
+        Web Speech API
+      </h1>
+      <p className="leading-7 [&:not(:first-child)]:mt-6">
+        This is a demo of the{" "}
+        <a
+          href="https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline text-blue-600 dark:text-blue-400"
+        >
+          Web Speech API
+        </a>{" "}
+        with a simple voice input form and a speech recognition form. The demo
+        also includes a debug info page that shows information about the
+        environment and browser.
       </p>
-    </>
-  )
+
+      <SpeechRecognition />
+
+      <EnvDebugInfo />
+    </div>
+  );
 }
 
-export default App
+export default App;

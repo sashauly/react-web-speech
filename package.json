@@ -1,5 +1,6 @@
 {
-  "name": "web-speech",
+  "name": "react-web-speech",
+  "homepage": "https://sashauly.github.io/react-web-speech/",
   "private": true,
   "version": "0.0.0",
   "type": "module",
